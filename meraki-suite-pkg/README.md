@@ -43,7 +43,7 @@ python suite_gui.py
 typing the command. (Mac/Linux: `run.sh`.) These just launch the app and keep the
 window open if there's an error so you can read it.
 
-### Providing the API key
+### Providing the API key (ENV VAR is optional for CLI use)
 
 You can either:
 - **Paste it into the top bar** of the window each time you launch, **or**
@@ -305,5 +305,13 @@ See `examples/README.md` for details on each file.
 - Is the **Organization ID** the one I intend (test vs. production)?
 - Have I run it as a **dry run** and read the Output?
 - For Restore: am I restoring **into** the right target, from the right backup?
-- For bulk policy: is **Group size** <= 150?
+- For bulk policy: is **Group size** <= 150? (API should return a failed response for this anyways)
 - For switch ports: are the new switches **claimed and named** to match first?
+
+
+<img width="1015" height="250" alt="Screenshot 2026-06-26 183612" src="https://github.com/user-attachments/assets/b7519929-ee7d-471a-9851-edd669659ac4" />
+<img width="688" height="230" alt="Screenshot 2026-06-26 183546" src="https://github.com/user-attachments/assets/0d490a54-7c7d-48dc-bbc0-d2d2e601276b" />
+<img width="892" height="704" alt="Screenshot 2026-06-26 183503" src="https://github.com/user-attachments/assets/cd52137a-43f6-4891-a65e-27f8725916a4" />
+
+
+
