@@ -1,0 +1,40 @@
+{
+  "source_network_id": "L_123456",
+  "source_network_name": "APAC-Template",
+  "settings": {
+    "allowedUrlPatterns": [
+      "example.com",
+      "intranet.example.net"
+    ],
+    "blockedUrlPatterns": [
+      "bad.example.org",
+      "ads.example.net"
+    ],
+    "blockedUrlCategories": [
+      "meraki:contentFiltering/category/C1",
+      "meraki:contentFiltering/category/C7"
+    ],
+    "urlCategoryListSize": "topSites"
+  },
+  "raw": {
+    "allowedUrlPatterns": [
+      "example.com",
+      "intranet.example.net"
+    ],
+    "blockedUrlPatterns": [
+      "bad.example.org",
+      "ads.example.net"
+    ],
+    "blockedUrlCategories": [
+      {
+        "id": "meraki:contentFiltering/category/C1",
+        "name": "Adult"
+      },
+      {
+        "id": "meraki:contentFiltering/category/C7",
+        "name": "Gambling"
+      }
+    ],
+    "urlCategoryListSize": "topSites"
+  }
+}

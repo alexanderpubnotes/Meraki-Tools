@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# Policy entries file
+# ---------------------------------------------------------------------------
+# Used by: Policy check, Policy -> group, Policy -> bulk groups
+# One entry per line. Blank lines and lines starting with # are ignored.
+#
+# Two ways to write a line:
+#   1. PLAIN  - just the value; the tool guesses the type (IP/CIDR vs FQDN).
+#   2. TYPED  - prefix with "ip," or "fqdn," to set the type explicitly.
+#
+# Use TYPED when you want to be certain (or if a value might be guessed wrong).
+# All example addresses below use documentation/reserved ranges, so they are
+# safe placeholders - replace them with your real values.
+# ---------------------------------------------------------------------------
+
+# --- Plain lines (type inferred) -------------------------------------------
+
+# A single host IP (the tool treats a bare IP as /32):
+198.51.100.25
+
+# A CIDR range:
+203.0.113.0/24
+
+# A fully-qualified domain name:
+malware.example.com
+
+# Another FQDN:
+ads.example.net
+
+
+# --- Typed lines (explicit, no guessing) -----------------------------------
+
+ip,192.0.2.0/24
+ip,198.51.100.200
+fqdn,tracker.example.org
+fqdn,phishing.example.com
+
+
+# --- How to add your own ---------------------------------------------------
+# Just add more lines below. Mix plain and typed freely. For example:
+#
+#   10.20.30.0/24
+#   ip,172.16.5.5
+#   suspicious-domain.example
+#   fqdn,another-domain.example
+#
+# Then point the function's "From file" field at this file.

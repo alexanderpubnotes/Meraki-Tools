@@ -1,0 +1,32 @@
+{
+  "source_network_id": "L_123456",
+  "source_network_name": "APAC-Template",
+  "rules": [
+    {
+      "policy": "deny",
+      "type": "host",
+      "value": "malware.example.com"
+    },
+    {
+      "policy": "deny",
+      "type": "ipRange",
+      "value": "203.0.113.0/24"
+    },
+    {
+      "policy": "deny",
+      "type": "application",
+      "value": {
+        "id": "meraki:layer7/application/4",
+        "name": "Example App"
+      }
+    },
+    {
+      "policy": "deny",
+      "type": "applicationCategory",
+      "value": {
+        "id": "meraki:layer7/category/1",
+        "name": "Example Category"
+      }
+    }
+  ]
+}
