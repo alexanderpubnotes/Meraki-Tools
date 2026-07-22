@@ -5,6 +5,10 @@ window with two sections — **Daily Management** and **Migration** — each bac
 its own independent engine. This guide explains setup, the concepts that apply
 everywhere, and every function with its inputs and safety notes.
 
+
+<img width="2559" height="1069" alt="image" src="https://github.com/user-attachments/assets/2ecbb7b8-7147-46ce-80aa-6e4136161ad2" />
+
+
 ---
 
 ## 1. Setup & running
@@ -426,3 +430,6 @@ See `examples/README.md` for details on each file.
 - For bulk policy: is **Group size** <= 150?
 - For switch ports: are the new switches **claimed and named** to match first?
 - For L3 insert (batch): do I have the batch backup file path, in case I need to roll back?
+
+
+
