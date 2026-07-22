@@ -24,6 +24,13 @@ from merakicore import networks as net_mod
 from merakicore import safety
 from commands import export_networks
 from commands import export_orgs
+from commands import export_groups
+from commands import apply_l3_insert
+from commands import apply_l3_reinflate
+from commands import apply_l3_flattened
+from commands import apply_l3_insert_batch
+from commands import apply_l3_restore_batch
+from commands import export_l3_migration
 from commands import export_firewall
 from commands import export_l7
 from commands import apply_l7
@@ -36,7 +43,7 @@ from merakicore import policyobjects as po
 
 
 def _resolve_org_id(args):
-    org = args.org or os.environ.get("MERAKI_ORG_ID")
+    org = getattr(args, "org_local", None) or args.org or os.environ.get("MERAKI_ORG_ID")
     if not org:
         sys.exit(
             "Error: no organization ID. Pass --org <ID> or set MERAKI_ORG_ID.\n"
@@ -171,6 +178,106 @@ def cmd_apply_policy_bulk(args):
     )
 
 
+def cmd_export_groups(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    export_groups.run(dashboard, org_id, fmt=args.format, output=args.output,
+                      show_members=args.show_members)
+
+
+def cmd_apply_l3_insert(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    try:
+        spec = apply_l3_insert.load_rule_file(args.rule_file)
+    except Exception as e:
+        sys.exit(f"Error reading rule file: {e}")
+    if args.comment:
+        spec["comment"] = args.comment.strip()
+    if args.apply:
+        print("You are about to INSERT an L3 firewall rule at position 1 on live networks.")
+        if not safety.confirm():
+            sys.exit("Aborted. No changes made.")
+    try:
+        apply_l3_insert.run(dashboard, org_id, spec,
+                            network_ids=args.networks, apply=args.apply)
+    except net_mod.NoNetworksResolved as e:
+        sys.exit(f"Error: {e}")
+
+
+def cmd_export_l3_migration(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    export_l3_migration.run(dashboard, org_id, args.network, output_prefix=args.output)
+
+
+def cmd_apply_l3_reinflate(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    try:
+        ruleset = apply_l3_reinflate.load_ruleset(args.rule_file)
+    except Exception as e:
+        sys.exit(f"Error reading ruleset file: {e}")
+    if args.apply:
+        print("You are about to REPLACE the L3 ruleset on live networks with reinflated rules.")
+        if not safety.confirm():
+            sys.exit("Aborted. No changes made.")
+    try:
+        apply_l3_reinflate.run(dashboard, org_id, ruleset,
+                               network_ids=args.networks, apply=args.apply)
+    except net_mod.NoNetworksResolved as e:
+        sys.exit(f"Error: {e}")
+
+
+def cmd_apply_l3_flattened(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    try:
+        ruleset = apply_l3_flattened.load_ruleset(args.rule_file)
+    except Exception as e:
+        sys.exit(f"Error reading ruleset file: {e}")
+    if args.apply:
+        print("You are about to REPLACE the L3 ruleset on live networks with a flattened ruleset.")
+        if not safety.confirm():
+            sys.exit("Aborted. No changes made.")
+    try:
+        apply_l3_flattened.run(dashboard, org_id, ruleset,
+                               network_ids=args.networks, apply=args.apply)
+    except net_mod.NoNetworksResolved as e:
+        sys.exit(f"Error: {e}")
+
+
+def cmd_apply_l3_insert_batch(args):
+    dashboard = _get_dashboard_or_exit()
+    org_id = _resolve_org_id(args)
+    try:
+        spec = apply_l3_insert.load_rule_file(args.rule_file)
+    except Exception as e:
+        sys.exit(f"Error reading rule file: {e}")
+    if args.comment:
+        spec["comment"] = args.comment.strip()
+    if args.apply:
+        print("You are about to INSERT an L3 rule at position 1 across a BATCH of live networks.")
+        if not safety.confirm():
+            sys.exit("Aborted. No changes made.")
+    apply_l3_insert_batch.run(dashboard, org_id, spec, skip=args.skip, limit=args.limit,
+                              network_ids=args.networks, apply=args.apply,
+                              backup_prefix=args.backup_prefix)
+
+
+def cmd_apply_l3_restore_batch(args):
+    dashboard = _get_dashboard_or_exit()
+    try:
+        backup = apply_l3_restore_batch.load_backup(args.backup_file)
+    except Exception as e:
+        sys.exit(f"Error reading backup file: {e}")
+    if args.apply:
+        print(f"You are about to RESTORE L3 rules to {len(backup.get('networks',{}))} network(s) from backup.")
+        if not safety.confirm():
+            sys.exit("Aborted. No changes made.")
+    apply_l3_restore_batch.run(dashboard, backup, apply=args.apply)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="meraki-tools", description="Meraki operations toolkit.")
     parser.add_argument("--org", help="Organization ID (or set MERAKI_ORG_ID)")
@@ -186,6 +293,20 @@ def build_parser():
                         help="Also write a file in this format (default: print only)")
     p_orgs.add_argument("--output", help="Output file path (default: orgs.<format>)")
     p_orgs.set_defaults(func=cmd_export_orgs)
+
+    p_grp = export_sub.add_parser("groups", help="List an org's policy object groups (name, ID, member count)")
+    p_grp.add_argument("--org", dest="org_local", metavar="ID", help="Organization ID (or set MERAKI_ORG_ID)")
+    p_grp.add_argument("--format", choices=["json", "csv"], default="json")
+    p_grp.add_argument("--output", help="Output file (default: groups_<org>.<fmt>)")
+    p_grp.add_argument("--show-members", action="store_true", help="Include object IDs in JSON output")
+    p_grp.set_defaults(func=cmd_export_groups)
+
+    p_l3m = export_sub.add_parser("l3-migration",
+        help="Export a network's L3 ruleset in migration form (name-referenced + flattened)")
+    p_l3m.add_argument("--org", dest="org_local", metavar="ID", help="Organization ID (or set MERAKI_ORG_ID)")
+    p_l3m.add_argument("--network", required=True, metavar="ID", help="Source network ID")
+    p_l3m.add_argument("--output", metavar="PREFIX", help="Output file prefix")
+    p_l3m.set_defaults(func=cmd_export_l3_migration)
 
     p_net = export_sub.add_parser("networks", help="Export the org's networks")
     p_net.add_argument("--networks", nargs="+", metavar="ID",
@@ -282,6 +403,55 @@ def build_parser():
     p_pb.add_argument("--apply", action="store_true",
                       help="Actually create objects/groups. Without this, prints the plan only.")
     p_pb.set_defaults(func=cmd_apply_policy_bulk)
+
+    p_l3 = apply_sub.add_parser("l3-insert", help="Insert one L3 firewall rule at position 1 across networks")
+    p_l3.add_argument("--org", dest="org_local", metavar="ID", help="Organization ID (or set MERAKI_ORG_ID)")
+    p_l3.add_argument("--rule-file", required=True, metavar="FILE",
+                      help="JSON rule file (dest references by NAME)")
+    p_l3.add_argument("--comment", help="Override the rule name/comment")
+    p_l3.add_argument("--networks", nargs="+", metavar="ID",
+                      help="Target network IDs (default: all appliance networks)")
+    p_l3.add_argument("--apply", action="store_true",
+                      help="Actually write. Without this, dry run.")
+    p_l3.set_defaults(func=cmd_apply_l3_insert)
+
+    p_l3r = apply_sub.add_parser("l3-reinflate",
+        help="Rebuild object/group references in an L3 ruleset (name -> target org IDs)")
+    p_l3r.add_argument("--org", dest="org_local", metavar="ID", help="Target organization ID")
+    p_l3r.add_argument("--rule-file", required=True, metavar="FILE",
+                       help="Name-referenced ruleset JSON (from export l3-migration)")
+    p_l3r.add_argument("--networks", nargs="+", metavar="ID",
+                       help="Target network IDs (default: all appliance networks)")
+    p_l3r.add_argument("--apply", action="store_true", help="Actually write. Without this, dry run.")
+    p_l3r.set_defaults(func=cmd_apply_l3_reinflate)
+
+    p_l3f = apply_sub.add_parser("l3-flattened",
+        help="Apply a flattened (self-contained) L3 ruleset onto networks (migration online step)")
+    p_l3f.add_argument("--org", dest="org_local", metavar="ID", help="Target organization ID")
+    p_l3f.add_argument("--rule-file", required=True, metavar="FILE",
+                       help="Flattened ruleset JSON (the *_flattened.json from export l3-migration)")
+    p_l3f.add_argument("--networks", nargs="+", metavar="ID",
+                       help="Target network IDs (default: all appliance networks)")
+    p_l3f.add_argument("--apply", action="store_true", help="Actually write. Without this, dry run.")
+    p_l3f.set_defaults(func=cmd_apply_l3_flattened)
+
+    p_l3b = apply_sub.add_parser("l3-insert-batch",
+        help="Insert an L3 rule at position 1 across a BATCH of networks (with backup)")
+    p_l3b.add_argument("--org", dest="org_local", metavar="ID", help="Organization ID")
+    p_l3b.add_argument("--rule-file", required=True, metavar="FILE", help="JSON rule file (dest by NAME)")
+    p_l3b.add_argument("--comment", help="Override the rule name/comment")
+    p_l3b.add_argument("--skip", type=int, default=0, metavar="M", help="Skip the first M networks")
+    p_l3b.add_argument("--limit", type=int, default=None, metavar="N", help="Process at most N networks this batch")
+    p_l3b.add_argument("--networks", nargs="+", metavar="ID", help="Restrict to these network IDs before slicing")
+    p_l3b.add_argument("--backup-prefix", metavar="PREFIX", help="Backup file prefix")
+    p_l3b.add_argument("--apply", action="store_true", help="Actually write. Without this, dry run.")
+    p_l3b.set_defaults(func=cmd_apply_l3_insert_batch)
+
+    p_l3rb = apply_sub.add_parser("l3-restore-batch",
+        help="Roll back a batch: restore each network's L3 rules from a batch backup file")
+    p_l3rb.add_argument("--backup-file", required=True, metavar="FILE", help="Batch backup JSON from l3-insert-batch")
+    p_l3rb.add_argument("--apply", action="store_true", help="Actually write. Without this, dry run.")
+    p_l3rb.set_defaults(func=cmd_apply_l3_restore_batch)
 
     return parser
 

@@ -12,6 +12,7 @@ Org-level policy lookups are built once and reused across all networks.
 from merakicore import networks as net_mod
 from merakicore import resolve as rz
 from merakicore import io as io_mod
+from merakicore import paths
 
 L3_FIELDS = [
     "network_id", "network_name", "rule_index", "comment", "policy", "protocol",
@@ -103,14 +104,14 @@ def run(dashboard, org_id, network_ids=None, fmt="csv", output=None):
             for i, rule in enumerate(_get_switch_acls(dashboard, net["id"])):
                 acl_rows.append(_flatten_acl(net, i, rule))
 
-    base = output or "firewall"
-    paths = []
+    base = output or paths.default_path("exports", "firewall")
+    written = []
     if fmt == "json":
-        p1 = f"{base}_l3.json"; io_mod.save_json(p1, l3_rows); paths.append(p1)
-        p2 = f"{base}_switch_acl.json"; io_mod.save_json(p2, acl_rows); paths.append(p2)
+        p1 = f"{base}_l3.json"; io_mod.save_json(p1, l3_rows); written.append(p1)
+        p2 = f"{base}_switch_acl.json"; io_mod.save_json(p2, acl_rows); written.append(p2)
     else:
-        p1 = f"{base}_l3.csv"; io_mod.save_csv(p1, l3_rows, L3_FIELDS); paths.append(p1)
-        p2 = f"{base}_switch_acl.csv"; io_mod.save_csv(p2, acl_rows, SWITCH_ACL_FIELDS); paths.append(p2)
+        p1 = f"{base}_l3.csv"; io_mod.save_csv(p1, l3_rows, L3_FIELDS); written.append(p1)
+        p2 = f"{base}_switch_acl.csv"; io_mod.save_csv(p2, acl_rows, SWITCH_ACL_FIELDS); written.append(p2)
 
     print(f"  L3 rules: {len(l3_rows)}   switch ACL rules: {len(acl_rows)}")
-    return paths
+    return written

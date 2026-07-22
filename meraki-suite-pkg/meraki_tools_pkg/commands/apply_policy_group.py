@@ -35,7 +35,8 @@ def _choose(items, label, render):
         print(f"  Enter a number between 1 and {len(items)}.")
 
 
-def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
+def run(dashboard, entries, apply=False, name_base=None, assume_yes=False,
+        progress_cb=None, cancel_event=None):
     if not entries:
         sys.exit("Nothing to add. Supply --fqdn / --ip / --from-file.")
 
@@ -80,7 +81,12 @@ def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
     failures = []            # (entry, reason)
 
     total = len(entries)
+    cancelled = False
     for i, (val, typ) in enumerate(entries, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before entry {i}/{total}.")
+            cancelled = True
+            break
         prefix = f"  [{i}/{total}] {val}"
         existing = po.find_existing(val, typ, by_fqdn, by_cidr)
 
@@ -92,6 +98,8 @@ def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
             else:
                 print(f"{prefix} — object exists, will add to group")
                 to_add_ids.append(oid); current_set.add(oid)
+            if progress_cb:
+                progress_cb(i, total)
             continue
 
         # No value match. Determine the name this new object would get.
@@ -102,6 +110,8 @@ def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
                   f"different value; skipping to stay safe")
             collided += 1
             failures.append((val, "name collision"))
+            if progress_cb:
+                progress_cb(i, total)
             continue
 
         # Needs creating.
@@ -111,6 +121,8 @@ def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
             created += 1
             if name_base:
                 next_idx += 1
+            if progress_cb:
+                progress_cb(i, total)
             continue
 
         try:
@@ -127,11 +139,14 @@ def run(dashboard, entries, apply=False, name_base=None, assume_yes=False):
         except Exception as e:
             print(f"{prefix} — FAILED to create: {e}")
             failures.append((val, str(e)))
+        if progress_cb:
+            progress_cb(i, total)
 
     # 4. Single group update at the end
     print("\n" + "=" * 60)
     print(f"Prepared: create/added {created}, already-in-group {already}, "
-          f"name-collisions {collided}, failures {len(failures)}")
+          f"name-collisions {collided}, failures {len(failures)}"
+          + ("  (CANCELLED early)" if cancelled else ""))
     new_total = len(current_ids) + len(to_add_ids)
 
     if dry_run:

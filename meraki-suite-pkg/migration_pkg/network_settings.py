@@ -161,8 +161,8 @@ TRANSFORMS = {
 
 # --------------------------------------------------------------- restore ---
 
-def restore(dashboard, target_org_id, backup_dir, dry_run=False, network_filter=None,
-            id_map=None):
+def restore(dashboard, target_org_id, backup_dir, dry_run=True, network_filter=None,
+            id_map=None, progress_cb=None, cancel_event=None):
     mode = "DRY RUN — no changes will be made" if dry_run else "applying changes"
     announce(f"Restoring networks into org {target_org_id} ({mode})")
 
@@ -193,10 +193,19 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False, network_filter=
     name_to_target_id = {n["name"]: n["id"] for n in existing}
     failures = []
 
-    for net in networks:
+    cancelled = False
+    total = len(networks)
+    for i, net in enumerate(networks, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before network {i}/{total} "
+                  f"('{net['name']}'). Networks already restored are unaffected.")
+            cancelled = True
+            break
         net_dir = f"{backup_dir}/networks/{safe_name(net['name'])}"
         if not os.path.isdir(net_dir):
             print(f"  SKIP    '{net['name']}' (no settings in backup)")
+            if progress_cb:
+                progress_cb(i, total)
             continue
         print(f"\n  network '{net['name']}'")
 
@@ -277,8 +286,12 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False, network_filter=
             switch_settings.restore_network(dashboard, target_net["id"], net["name"],
                                             net_dir, backup_dir, target_org_id,
                                             failures, dry_run)
+        if progress_cb:
+            progress_cb(i, total)
 
     # ---- 3. Second pass: site-to-site VPN (hubs first, then spokes) --------
+    # Not gated by cancel_event — it's a short pass over whatever networks
+    # were actually restored above, not a separate long-running phase.
     restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dry_run)
 
     # ---- Failure summary ---------------------------------------------------
@@ -290,11 +303,14 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False, network_filter=
             save_json(f"{backup_dir}/network_failures_org_{target_org_id}.json", failures)
             print("  Details saved. Fix the cause and re-run; the restore is idempotent.")
     elif dry_run:
-        print("\n  Dry run complete — nothing was changed. Re-run without --dry-run to apply.")
+        print("\n  Dry run complete — nothing was changed. Re-run with --apply to apply."
+              + ("  (CANCELLED early)" if cancelled else ""))
+    elif cancelled:
+        print("\n  Cancelled early — safe to re-run; already-restored networks are idempotent.")
 
 
 def restore_vpn_only(dashboard, target_org_id, backup_dir, network_filter=None,
-                     dry_run=False):
+                     dry_run=True, progress_cb=None, cancel_event=None):
     """Re-run just the site-to-site VPN pass — e.g. after the hub network's
     MX has been claimed, which is required before spokes can point at it."""
     mode = "DRY RUN — no changes will be made" if dry_run else "applying changes"
@@ -313,7 +329,8 @@ def restore_vpn_only(dashboard, target_org_id, backup_dir, network_filter=None,
         organizationId=target_org_id, total_pages="all")
     name_to_target_id = {n["name"]: n["id"] for n in target_nets}
     failures = []
-    restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dry_run)
+    restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dry_run,
+               progress_cb=progress_cb, cancel_event=cancel_event)
     if failures:
         print(f"\n  {len(failures)} item(s) FAILED:")
         for f in failures:
@@ -322,13 +339,19 @@ def restore_vpn_only(dashboard, target_org_id, backup_dir, network_filter=None,
             save_json(f"{backup_dir}/vpn_failures_org_{target_org_id}.json", failures)
 
 
-def restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dry_run):
+def restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dry_run,
+                progress_cb=None, cancel_event=None):
     """Apply site-to-site (AutoVPN) settings after all networks exist.
 
     A spoke's config references its hubs by NETWORK ID, so each hubId is
     remapped old-org-id -> network name -> new-org-id. Hubs are applied
     before spokes, since the API rejects a spoke pointing at a network
     that isn't in hub mode yet.
+
+    progress_cb/cancel_event are optional and only meaningful when this is the
+    PRIMARY operation (i.e. called from restore_vpn_only) — when called as the
+    tail end of a full restore(), the caller intentionally omits them so this
+    short pass always runs to completion.
     """
     # Map old network IDs to names using the FULL backup network list —
     # a spoke's hub may not be part of a filtered restore.
@@ -346,9 +369,15 @@ def restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dr
     pending.sort(key=lambda item: 0 if item[1].get("mode") == "hub" else 1)
 
     print("\n  --- site-to-site VPN (second pass) ---")
-    for net, data in pending:
+    total = len(pending)
+    for i, (net, data) in enumerate(pending, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before VPN network {i}/{total}.")
+            break
         target_id = name_to_target_id.get(net["name"])
         if not target_id:
+            if progress_cb:
+                progress_cb(i, total)
             continue  # network was never created; already reported above
         try:
             payload = dict(data)
@@ -376,6 +405,8 @@ def restore_vpn(dashboard, networks, backup_dir, name_to_target_id, failures, dr
         except Exception as e:
             print(f"  ERROR   '{net['name']}' site_to_site_vpn: {e}")
             failures.append({"kind": "site_to_site_vpn", "name": net["name"], "error": str(e)})
+        if progress_cb:
+            progress_cb(i, total)
 
 
 def restore_static_routes(dashboard, net_id, net_name, routes, failures, dry_run):

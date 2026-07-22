@@ -21,11 +21,12 @@ class WriteResult:
         self.succeeded = []   # (name, id, detail)
         self.unchanged = []   # (name, id, detail)
         self.failed = []      # (name, id, error)
+        self.cancelled = False
 
     def print_summary(self, dry_run):
         mode = "DRY RUN (no changes made)" if dry_run else "APPLIED"
         print("\n" + "=" * 60)
-        print(f"Summary — {mode}")
+        print(f"Summary — {mode}" + ("  (CANCELLED early)" if self.cancelled else ""))
         print("=" * 60)
         print(f"  would change / changed : {len(self.succeeded)}")
         print(f"  unchanged              : {len(self.unchanged)}")
@@ -36,7 +37,8 @@ class WriteResult:
                 print(f"    - {name} ({nid}): {err}")
 
 
-def run_write(networks, action, dry_run=True, describe=None):
+def run_write(networks, action, dry_run=True, describe=None,
+              progress_cb=None, cancel_event=None):
     """
     Execute a write action across networks with dry-run gating and reporting.
 
@@ -51,12 +53,21 @@ def run_write(networks, action, dry_run=True, describe=None):
         dry_run:  if True (default), action is told not to write.
         describe: optional callable(network) -> str, printed before each action
                   (e.g. a per-network preview line).
+        progress_cb: optional callable(done, total), called after each network.
+        cancel_event: optional threading.Event; checked BEFORE each network so
+                  a cancellation never interrupts a network mid-write — it only
+                  stops the loop from starting the next one.
 
     Returns:
         WriteResult
     """
     result = WriteResult()
-    for net in networks:
+    total = len(networks)
+    for i, net in enumerate(networks, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before network {i}/{total}.")
+            result.cancelled = True
+            break
         name, nid = net.get("name", "(unnamed)"), net["id"]
         if describe:
             print(f"  {describe(net)}")
@@ -72,6 +83,8 @@ def run_write(networks, action, dry_run=True, describe=None):
         except Exception as e:
             result.failed.append((name, nid, str(e)))
             print(f"    FAILED: {name} ({nid}) — {e}")
+        if progress_cb:
+            progress_cb(i, total)
     return result
 
 

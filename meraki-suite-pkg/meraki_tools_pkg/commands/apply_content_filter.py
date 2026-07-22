@@ -23,7 +23,8 @@ def _get_current(dashboard, network_id):
     return cf.normalize_settings(raw)
 
 
-def run(dashboard, org_id, source_file, network_ids=None, mode="replace", apply=False):
+def run(dashboard, org_id, source_file, network_ids=None, mode="replace", apply=False,
+        progress_cb=None, cancel_event=None):
     data = io_mod.load_json(source_file)
     source = data.get("settings") or cf.normalize_settings(data.get("raw", {}))
     src_name = data.get("source_network_name", "?")
@@ -56,6 +57,7 @@ def run(dashboard, org_id, source_file, network_ids=None, mode="replace", apply=
         dashboard.appliance.updateNetworkApplianceContentFiltering(net["id"], **new_settings)
         return "changed", f"{detail} -> set [{cf.summarize(new_settings)}]"
 
-    result = safety.run_write(targets, action, dry_run=dry_run)
+    result = safety.run_write(targets, action, dry_run=dry_run,
+                              progress_cb=progress_cb, cancel_event=cancel_event)
     result.print_summary(dry_run)
     return result

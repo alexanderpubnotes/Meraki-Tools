@@ -11,6 +11,7 @@ straight back into the update endpoint without reshaping.
 
 from merakicore import networks as net_mod
 from merakicore import io as io_mod
+from merakicore import paths
 
 
 def _get_l7_rules(dashboard, network_id):
@@ -40,6 +41,6 @@ def run(dashboard, org_id, source_network_id, output=None):
         "source_network_name": source["name"],
         "rules": rules,
     }
-    out = output or f"l7_{source['id']}.json"
+    out = output or paths.default_path("exports", f"l7_{source['id']}.json")
     io_mod.save_json(out, payload)
     return out

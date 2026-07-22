@@ -10,8 +10,15 @@ Usage:
         timestamped folder under ./backups/.
 
     python main.py restore --org <TARGET_ORG_ID> --backup <BACKUP_FOLDER>
-        Recreate the backed-up policy objects/groups in the target org.
-        If --backup is omitted, the most recent backup folder is used.
+        Preview (dry run) restoring the backed-up policy objects/groups into
+        the target org. Nothing is written. If --backup is omitted, the most
+        recent backup folder is used.
+
+    python main.py restore --org <TARGET_ORG_ID> --backup <BACKUP_FOLDER> --apply
+        Actually write the restore (after an interactive y/N confirmation).
+
+Like meraki_tools_pkg's `apply` commands, `restore` and `restore-ports` default
+to a dry run; pass --apply to write for real.
 
 The API key is read from the MERAKI_DASHBOARD_API_KEY environment variable.
 """
@@ -70,24 +77,25 @@ def cmd_restore(dashboard, args):
 
     org = dashboard.organizations.getOrganization(organizationId=args.org)
     nets = args.networks.split(",") if args.networks else None
+    dry_run = not args.apply
     common.announce(f"Restore from {backup_dir} -> '{org['name']}' ({args.org})")
-    if not args.dry_run:
+    if args.apply:
         print(f"This will CREATE/UPDATE settings (scope: {args.scope}) in the target org.")
         if input("Proceed? (y/N): ").strip().lower() != "y":
             sys.exit("Aborted.")
 
     if args.scope == "vpn":
         network_settings.restore_vpn_only(dashboard, args.org, backup_dir,
-                                          network_filter=nets, dry_run=args.dry_run)
+                                          network_filter=nets, dry_run=dry_run)
         return
     id_map = None
     if args.scope in ("objects", "all"):
-        id_map = policy_objects.restore(dashboard, args.org, backup_dir, dry_run=args.dry_run)
+        id_map = policy_objects.restore(dashboard, args.org, backup_dir, dry_run=dry_run)
     if args.scope in ("networks", "all"):
         # Pass the in-memory id map so a combined dry run previews the
         # OBJ()/GRP() rewrite instead of reporting false l3_firewall errors.
         network_settings.restore(dashboard, args.org, backup_dir,
-                                 dry_run=args.dry_run, network_filter=nets,
+                                 dry_run=dry_run, network_filter=nets,
                                  id_map=id_map)
     print("\nDone.")
 
@@ -98,13 +106,14 @@ def cmd_restore_ports(dashboard, args):
         sys.exit("Error: no backup folder found. Run a backup first or pass --backup <folder>.")
     org = dashboard.organizations.getOrganization(organizationId=args.org)
     nets = args.networks.split(",") if args.networks else None
+    dry_run = not args.apply
     common.announce(f"Switch port restore from {backup_dir} -> '{org['name']}' ({args.org})")
-    if not args.dry_run:
+    if args.apply:
         print("This will OVERWRITE port configs on name-matched switches in the target org.")
         if input("Proceed? (y/N): ").strip().lower() != "y":
             sys.exit("Aborted.")
     switch_settings.restore_ports(dashboard, args.org, backup_dir,
-                                  network_filter=nets, dry_run=args.dry_run)
+                                  network_filter=nets, dry_run=dry_run)
 
 
 def main():
@@ -122,8 +131,8 @@ def main():
     p_restore = sub.add_parser("restore", help="Restore a backup into an organization")
     p_restore.add_argument("--org", required=True, help="Target organization ID")
     p_restore.add_argument("--backup", help="Backup folder (default: most recent)")
-    p_restore.add_argument("--dry-run", action="store_true",
-                           help="Show what would be created/updated without changing anything")
+    p_restore.add_argument("--apply", action="store_true",
+                           help="Actually create/update settings. Without this, runs as a dry run.")
     p_restore.add_argument("--scope", choices=["objects", "networks", "vpn", "all"], default="all",
                            help="What to restore (default: all; 'vpn' re-runs only the site-to-site pass)")
     p_restore.add_argument("--networks", help="Comma-separated network names (default: all in backup)")
@@ -133,7 +142,8 @@ def main():
     p_ports.add_argument("--org", required=True, help="Target organization ID")
     p_ports.add_argument("--backup", help="Backup folder (default: most recent)")
     p_ports.add_argument("--networks", help="Comma-separated network names (default: all in backup)")
-    p_ports.add_argument("--dry-run", action="store_true")
+    p_ports.add_argument("--apply", action="store_true",
+                         help="Actually write port configs. Without this, runs as a dry run.")
 
     args = parser.parse_args()
     dashboard = common.get_dashboard()

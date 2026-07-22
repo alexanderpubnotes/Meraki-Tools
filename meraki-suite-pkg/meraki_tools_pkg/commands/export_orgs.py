@@ -10,6 +10,7 @@ can optionally write JSON/CSV like the other exporters.
 """
 
 from merakicore import io as io_mod
+from merakicore import paths
 
 CSV_FIELDS = ["id", "name", "url"]
 
@@ -31,7 +32,7 @@ def run(dashboard, fmt=None, output=None):
         print(f"  {org['id']}   {org.get('name', '(unnamed)')}")
 
     if fmt:
-        out = output or f"orgs.{fmt}"
+        out = output or paths.default_path("exports", f"orgs.{fmt}")
         if fmt == "csv":
             io_mod.save_csv(out, [_row(o) for o in orgs], CSV_FIELDS)
         else:

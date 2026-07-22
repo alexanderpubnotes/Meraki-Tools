@@ -16,7 +16,12 @@ import sys
 import meraki
 
 ENV_VAR = "MERAKI_DASHBOARD_API_KEY"
-BACKUP_ROOT = "./backups"
+
+# Anchored to this file's location (not the current working directory), so
+# backups always land in the same place regardless of where a command is
+# launched from. Shares the same output/ tree as meraki_tools_pkg's exports.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BACKUP_ROOT = os.path.join(_REPO_ROOT, "output", "backups")
 
 
 def get_dashboard():

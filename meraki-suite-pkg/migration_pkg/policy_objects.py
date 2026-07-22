@@ -44,7 +44,8 @@ def backup(dashboard, org_id, backup_dir):
 
 # --------------------------------------------------------------- restore ---
 
-def restore(dashboard, target_org_id, backup_dir, dry_run=False):
+def restore(dashboard, target_org_id, backup_dir, dry_run=True,
+            progress_cb=None, cancel_event=None):
     """
     Recreate backed-up policy objects and groups inside target_org_id.
     Returns the id_map and also saves it to the backup directory.
@@ -74,9 +75,17 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False):
     )
     existing_by_name = {o["name"]: o for o in existing}
 
-    for obj in objects:
+    objects_cancelled = False
+    total_objects = len(objects)
+    for oi, obj in enumerate(objects, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before object {oi}/{total_objects}.")
+            objects_cancelled = True
+            break
         if obj.get("category") == "adaptivePolicy":
             print(f"  SKIP    object '{obj['name']}' (adaptive policy not supported)")
+            if progress_cb:
+                progress_cb(oi, total_objects)
             continue
 
         payload = {k: v for k, v in obj.items() if k not in OBJECT_READONLY_FIELDS}
@@ -104,9 +113,13 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False):
         except Exception as e:
             print(f"  ERROR   object '{obj['name']}': {e}")
             failures.append({"kind": "object", "name": obj["name"], "error": str(e)})
+            if progress_cb:
+                progress_cb(oi, total_objects)
             continue
 
         id_map["objects"][str(obj["id"])] = str(new_id)
+        if progress_cb:
+            progress_cb(oi, total_objects)
 
     # ---- 2. Groups (objectIds rewritten through the id_map) ---------------
     existing_groups = dashboard.organizations.getOrganizationPolicyObjectsGroups(
@@ -114,7 +127,13 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False):
     )
     existing_groups_by_name = {g["name"]: g for g in existing_groups}
 
-    for grp in groups:
+    groups_cancelled = False
+    total_groups = len(groups)
+    for gi, grp in enumerate(groups, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before group {gi}/{total_groups}.")
+            groups_cancelled = True
+            break
         payload = {k: v for k, v in grp.items() if k not in GROUP_READONLY_FIELDS}
 
         # Rewrite member object IDs from old org to new org, de-duplicating:
@@ -169,9 +188,15 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False):
         except Exception as e:
             print(f"  ERROR   group '{grp['name']}': {e}")
             failures.append({"kind": "group", "name": grp["name"], "error": str(e)})
+            if progress_cb:
+                progress_cb(gi, total_groups)
             continue
 
         id_map["groups"][str(grp["id"])] = str(new_gid)
+        if progress_cb:
+            progress_cb(gi, total_groups)
+
+    cancelled = objects_cancelled or groups_cancelled
 
     # ---- Failure summary ---------------------------------------------------
     if failures:
@@ -182,10 +207,13 @@ def restore(dashboard, target_org_id, backup_dir, dry_run=False):
             save_json(f"{backup_dir}/failures_org_{target_org_id}.json", failures)
             print("  Details saved. Fix the cause and re-run the restore; "
                   "successful items will simply be updated in place.")
+    elif cancelled:
+        print("\n  Cancelled early — safe to re-run; already-restored items are idempotent.")
 
     # ---- 3. Save the id_map for later phases ------------------------------
     if dry_run:
-        print("\n  Dry run complete — nothing was changed. Re-run without --dry-run to apply.")
+        print("\n  Dry run complete — nothing was changed. Re-run with --apply to apply."
+              + ("  (CANCELLED early)" if cancelled else ""))
         return id_map
     map_path = f"{backup_dir}/idmap_org_{target_org_id}.json"
     save_json(map_path, id_map)

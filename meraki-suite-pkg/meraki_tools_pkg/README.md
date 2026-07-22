@@ -22,6 +22,11 @@ the full UI), export its config, and apply that same config to other networks.
   renamed). Names are shown only for confirmation.
 - **Fetch once, format locally.** JSON is the canonical, round-trippable format
   (used for export → apply). CSV is a read-only view for humans, not a write path.
+- **One default output location.** When you don't pass `--output`, every
+  export/apply-batch command writes into a shared `output/` tree at the repo
+  root (`output/exports/`, `output/l3_migration/`, `output/l3_batches/`) —
+  see `merakicore/paths.py`. Pass `--output <path>` any time you want it
+  somewhere specific instead.
 
 ## Two tiers of commands (safety)
 
@@ -55,6 +60,7 @@ python cli.py export orgs --format csv             # also write orgs.csv
 python cli.py export networks                      # all networks in the org, with IDs
 python cli.py export networks --networks L_1 L_2    # only these networks
 python cli.py export networks --format csv         # as CSV instead of JSON
+python cli.py export groups                        # policy object groups: name, ID, member count
 ```
 
 ### Export (read-only)
@@ -148,6 +154,36 @@ only adds the new entries — existing placements never move, and a run that die
 partway can simply be re-run. `--group-size` is the per-group cap (default 140;
 keep headroom under Meraki's limit, and lower it for lower-end MX models).
 
+### L3 Rule Tools (org-to-org migration / staged rollout)
+
+Heavier-weight than `apply l7`/`apply content-filter` — for moving an L3
+ruleset between orgs, or rolling one rule out across a large org in batches.
+
+```
+# Source-side export: name-referenced (for reinflate) + flattened (for online migration)
+python cli.py export l3-migration --network L_TEMPLATE
+
+# Insert one rule at position 1 (dest refs are BY NAME, resolved per-org):
+python cli.py apply l3-insert --rule-file deny_spamhaus.json --networks L_2 L_3 --apply
+
+# Same insert, sliced across a large org with a batch backup written first:
+python cli.py apply l3-insert-batch --rule-file deny_spamhaus.json --limit 250 --apply
+python cli.py apply l3-insert-batch --rule-file deny_spamhaus.json --skip 250 --limit 250 --apply
+
+# Roll a batch back from its backup file:
+python cli.py apply l3-restore-batch --backup-file l3_batch_backup_ORG1_20260101_120000.json --apply
+
+# Rebuild object/group refs against a target org's live IDs (after recreating
+# the same-named objects/groups there), or push a self-contained ruleset:
+python cli.py apply l3-reinflate --rule-file l3_migration_L1_named.json --apply
+python cli.py apply l3-flattened --rule-file l3_migration_L1_flattened.json --apply
+```
+
+`apply l3-insert`/`l3-insert-batch`/`l3-reinflate`/`l3-flattened` all refuse to
+write (no partial/broken rule) if a referenced object/group name doesn't exist
+in the target org yet — create it there first. `l3-insert`/`l3-insert-batch`
+dedupe by rule comment, so re-running never stacks duplicates.
+
 ## Typical workflow (e.g. regional settings)
 
 ```
@@ -170,7 +206,8 @@ merakicore/            shared foundation
   resolve.py           OBJ/GRP policy-object token resolution
   contentfilter.py     content-filtering field normalization + merge
   policyobjects.py     policy-object/group helpers + entry parsing
-  safety.py            write harness: dry-run, confirmation, per-network errors
+  safety.py            write harness: dry-run, confirmation, per-network errors, progress/cancel
+  paths.py             default output/ locations (exports, l3_migration, l3_batches)
   io.py                JSON / CSV save + JSON load
 commands/              one module per operation (export_*, apply_*)
 cli.py                 entry point; groups commands as `export` / `apply`
@@ -188,3 +225,9 @@ requirements.txt       depends on: meraki
 - L7 `application`/`applicationCategory` rules and content-filter categories must
   be in Meraki's exact format on write. Because this tool propagates Meraki's own
   GET output, that format is preserved automatically.
+
+## Tests
+
+There's an offline `pytest` suite for this engine's core logic at the repo
+root's `tests/` folder (covers `merakicore/*`, the migration engine, and the
+GUI widgets) — see the root `README.md`'s "Running the tests" section.

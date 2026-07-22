@@ -50,7 +50,8 @@ def _build_target_rules(dashboard, network_id, source_rules, mode, position):
 
 
 def run(dashboard, org_id, source_file, network_ids=None,
-        mode="replace", position="bottom", apply=False):
+        mode="replace", position="bottom", apply=False,
+        progress_cb=None, cancel_event=None):
     """
     Args:
         source_file: path to JSON produced by `export l7`.
@@ -91,6 +92,7 @@ def run(dashboard, org_id, source_file, network_ids=None,
         )
         return "changed", f"{detail} -> set {len(new_rules)} total rule(s)"
 
-    result = safety.run_write(targets, action, dry_run=dry_run)
+    result = safety.run_write(targets, action, dry_run=dry_run,
+                              progress_cb=progress_cb, cancel_event=cancel_event)
     result.print_summary(dry_run)
     return result

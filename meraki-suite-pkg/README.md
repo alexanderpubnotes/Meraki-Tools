@@ -43,7 +43,7 @@ python suite_gui.py
 typing the command. (Mac/Linux: `run.sh`.) These just launch the app and keep the
 window open if there's an error so you can read it.
 
-### Providing the API key (ENV VAR is optional for CLI use)
+### Providing the API key
 
 You can either:
 - **Paste it into the top bar** of the window each time you launch, **or**
@@ -56,6 +56,11 @@ You can either:
   to your system environment variables / shell profile.)
 
 **Dark mode** toggles in the top-right of the window.
+
+**Test connection** (next to the API key field) is a quick, harmless check —
+it lists the orgs your key can see and reports the count in the Output box,
+without touching any panel's settings. Use it right after entering a key to
+confirm it works before going to a specific panel.
 
 > The API key has the same access your dashboard account does. Treat it like a
 > password. It is never written to disk by this tool.
@@ -77,35 +82,61 @@ You can either:
 
 ## 2. Concepts that apply everywhere
 
-**Organization ID.** Most functions need the org you're working in. Find it with
-**List organizations**, then paste the ID into the Organization ID field (or set
-`MERAKI_ORG_ID` to pre-fill it). **Always confirm the org ID before any write —
+**Organization picker.** Most functions need the org you're working in. Click
+**↻ Orgs** next to the Organization field to list every org your API key can
+see (or set `MERAKI_ORG_ID` to pre-fill it) — pick one from the dropdown, or
+type/paste a raw org ID directly. **Always confirm the org before any write —
 it is the one thing standing between a change to your test org and a change to
 production.**
 
-**Network IDs.** Functions that act on specific networks take network IDs (not
-names — names can repeat or be renamed). Find them with **Export networks**.
-Leave a "Networks" field blank to target all applicable networks in the org.
+**Network picker.** Functions that act on specific networks show a checklist of
+that org's networks (by name, with IDs shown alongside) — it loads automatically
+once you pick an org. Type in the Filter box to narrow a long list by name,
+use **Select all** / **Select none**, or leave **All networks** checked to
+target every applicable network in the org (the same as leaving it blank used
+to mean). Internally, Daily Management functions still target by network
+**ID** (unambiguous) while Migration functions match by network **name** — the
+picker shows both either way, so you don't need to hand-copy either one between
+panels anymore.
 
 **Read-only vs. write.** Read-only functions (List orgs, all Exports, Policy
 check, Backup) only fetch data and write local files — they never change the
 dashboard. Write functions (Apply L7, Apply content filter, Policy -> bulk groups,
-Restore, Restore switch ports) change live configuration.
+Restore, Restore switch ports, and the L3 Rule Tools apply panels) change live
+configuration.
 
 **Dry run.** Every write function defaults to a **dry run** — it shows what it
 *would* do and changes nothing. Read the Output box, confirm it's correct, then
 uncheck "Dry run" and run again. A confirmation dialog appears before any real
 write. **Make a habit of always dry-running first.**
 
+**Progress & Cancel.** Once a write function starts, a progress bar and
+**Cancel** button appear next to the Output toolbar. Clicking Cancel doesn't
+slam the brakes mid-network — it finishes whatever network/object is currently
+in flight, then stops before starting the next one, so nothing is ever left
+half-configured. The Run button is disabled while an operation is in progress
+(and the app won't let you start a second one until the first finishes or is
+cancelled).
+
 **The propagate model.** This tool *manages and propagates* existing
 configuration — it does not author it. The intended pattern: configure one
 network/object the way you want in the dashboard, **export** it, then **apply** it
 to others. The dashboard is where you build; the tool is how you replicate.
 
+**Default output location.** Every export, backup, and batch-insert file
+defaults into one `output/` folder next to the app (`output/exports/`,
+`output/backups/`, `output/l3_migration/`, `output/l3_batches/`) — organized
+so you can always find what a run produced and go back to review it later.
+Click **Open output folder** (next to the Output toolbar) to jump straight
+there in your file manager. You can still type your own path into any file
+field if you'd rather save somewhere specific — the default only applies when
+you leave a path blank.
+
 **Output box.** Every operation streams its progress into the Output box at the
 bottom. Long operations (big backups, bulk policy runs) may pause briefly while
 the Meraki API rate limit is respected — that is normal, not a freeze. Don't
-close the window mid-operation.
+close the window mid-operation. Use **Clear** to empty the box, or **Save to
+file…** to write its current contents out for a record of what ran.
 
 ---
 
@@ -122,6 +153,15 @@ close the window mid-operation.
   or CSV file. Use it to find the network IDs other functions need.
 - **Inputs:** Organization ID; optional list of network IDs to restrict to;
   format (json/csv).
+- **Safety:** read-only.
+
+### Export groups
+- **Purpose:** List an org's policy object groups (name, ID, member count) to
+  JSON or CSV. A discovery aid to confirm exact group names before referencing
+  them elsewhere — e.g. an L3 Rule Tools insert rule file references groups by
+  name.
+- **Inputs:** Organization ID; format (json/csv); optional "include member
+  object IDs" (JSON only).
 - **Safety:** read-only.
 
 ### Export firewall rules
@@ -247,7 +287,67 @@ extra care.
 
 ---
 
-## 5. A typical regional-settings workflow (example)
+## 5. L3 Rule Tools (advanced)
+
+A separate nav section for the L3 firewall migration/rollout workflow: moving
+or rolling out an L3 rule (or a whole ruleset) across networks or orgs, with
+name-portable object/group references and staged, backed-up batch rollouts.
+This is heavier-weight than Daily Management's Apply L7/content-filter panels
+— reach for it for org-to-org L3 migrations or large staged rule rollouts, not
+day-to-day changes.
+
+### Export L3 migration (name + flattened)
+- **Purpose:** Export one network's L3 ruleset in two portable forms: **name-referenced**
+  (object/group refs recorded by name, for **Apply L3 reinflate**) and fully
+  **flattened** (every reference expanded to literal IPs/CIDRs/FQDNs, for **Apply
+  L3 flattened**). This is the source-side step of an org-to-org L3 migration.
+- **Inputs:** Organization ID; the source network ID; optional output file prefix.
+- **Safety:** read-only.
+
+### Apply L3 insert  *(write)*
+- **Purpose:** Insert ONE L3 rule at position 1 across target networks, leaving
+  every other rule untouched. Dest group/object references in the rule file are
+  BY NAME and resolved against each target org's live IDs.
+- **Inputs:** Organization ID; a rule file (JSON — see `examples/README.md`);
+  optional comment override; optional target networks.
+- **Safety:** dry run by default; refuses to write if any referenced group/object
+  name doesn't exist in the target org (create it first). Re-running never stacks
+  duplicate rules.
+
+### Apply L3 insert (batch)  *(write)*
+- **Purpose:** The same insert, sliced across a large org in batches (Skip/Limit
+  over a deterministic, network-id-sorted order), backing up the WHOLE batch's
+  current rules to one timestamped file before writing anything.
+- **Inputs:** Organization ID; rule file; optional comment override; optional
+  target networks; Skip; Limit; optional backup file prefix.
+- **Safety:** dry run by default. A live run always writes the batch backup
+  first — roll back with **Apply L3 restore (batch rollback)**.
+
+### Apply L3 reinflate  *(write)*
+- **Purpose:** Rebuild a name-referenced ruleset's object/group references
+  against a TARGET org's live IDs — the step after recreating the same-named
+  objects/groups there (e.g. via **Policy → bulk groups**).
+- **Inputs:** Organization ID; the `*_named.json` ruleset file; optional target networks.
+- **Safety:** dry run by default; refuses to write if any referenced name is
+  missing in the target org.
+
+### Apply L3 flattened  *(write)*
+- **Purpose:** Push a flattened (self-contained, no OBJ/GRP refs) ruleset onto
+  target networks — the online-migration step, so the appliance stays functional
+  before objects/groups exist in the target org yet.
+- **Inputs:** Organization ID; the `*_flattened.json` ruleset file; optional target networks.
+- **Safety:** dry run by default; refuses a ruleset that still contains OBJ()/GRP() references.
+
+### Apply L3 restore (batch rollback)  *(write)*
+- **Purpose:** Roll back a batch by restoring each network's original L3 ruleset
+  verbatim from a batch backup file (made by **Apply L3 insert (batch)**).
+- **Inputs:** the batch backup JSON file only — no org or network selection
+  needed, since the backup already lists exactly which networks to restore.
+- **Safety:** dry run by default.
+
+---
+
+## 6. A typical regional-settings workflow (example)
 
 You want APAC sites to block certain content the others don't:
 
@@ -263,11 +363,13 @@ You want APAC sites to block certain content the others don't:
 
 ---
 
-## 6. Command-line use (optional)
+## 7. Command-line use (optional)
 
 Each engine also works from the command line if you prefer scripting:
 - Daily Management: `python meraki_tools_pkg/cli.py ...`
-  (e.g. `export orgs`, `export networks`, `apply policy-bulk ...`)
+  (e.g. `export orgs`, `export networks`, `export groups`, `apply policy-bulk ...`,
+  `apply l3-insert`, `apply l3-insert-batch`, `apply l3-reinflate`, `apply l3-flattened`,
+  `apply l3-restore-batch`, `export l3-migration`)
 - Migration: `python migration_pkg/main.py ...`
   (e.g. `backup`, `restore`, `restore-ports`)
 
@@ -276,7 +378,23 @@ the GUI is just an alternative front end.
 
 ---
 
-## 7. Input files (see the `examples/` folder)
+## 8. Running the tests (optional)
+
+There's a small, fully offline `pytest` suite under `tests/` — no API key or
+live org needed, since every test either builds a small fake stand-in for the
+Meraki client or drives the GUI widgets directly. If you're curious how a
+piece of this works (or want to check nothing broke after poking at the
+code), this is a good place to look — the tests are written to be readable on
+their own, one behavior per test.
+
+```
+pip install -r requirements-dev.txt   # adds pytest
+pytest                                # runs everything under tests/
+```
+
+---
+
+## 9. Input files (see the `examples/` folder)
 
 Some functions take a file. The `examples/` folder has ready-to-use samples.
 
@@ -300,18 +418,11 @@ See `examples/README.md` for details on each file.
 
 ---
 
-## 8. Safety checklist (read before any live write)
+## 10. Safety checklist (read before any live write)
 
-- Is the **Organization ID** the one I intend (test vs. production)?
+- Is the **Organization** the one I intend (test vs. production)?
 - Have I run it as a **dry run** and read the Output?
 - For Restore: am I restoring **into** the right target, from the right backup?
-- For bulk policy: is **Group size** <= 150? (API should return a failed response for this anyways)
+- For bulk policy: is **Group size** <= 150?
 - For switch ports: are the new switches **claimed and named** to match first?
-
-
-<img width="1015" height="250" alt="Screenshot 2026-06-26 183612" src="https://github.com/user-attachments/assets/b7519929-ee7d-471a-9851-edd669659ac4" />
-<img width="688" height="230" alt="Screenshot 2026-06-26 183546" src="https://github.com/user-attachments/assets/0d490a54-7c7d-48dc-bbc0-d2d2e601276b" />
-<img width="892" height="704" alt="Screenshot 2026-06-26 183503" src="https://github.com/user-attachments/assets/cd52137a-43f6-4891-a65e-27f8725916a4" />
-
-
-
+- For L3 insert (batch): do I have the batch backup file path, in case I need to roll back?

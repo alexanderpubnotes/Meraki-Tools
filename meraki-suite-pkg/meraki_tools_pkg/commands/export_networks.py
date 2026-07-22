@@ -8,6 +8,7 @@ one command, with a format choice, operating on the live org.
 
 from merakicore import networks as net_mod
 from merakicore import io as io_mod
+from merakicore import paths
 
 # Columns for the CSV view. Tags/productTypes are lists, so they're joined.
 CSV_FIELDS = ["id", "name", "productTypes", "tags", "timeZone", "url"]
@@ -38,7 +39,7 @@ def run(dashboard, org_id, network_ids=None, fmt="json", output=None):
     print(f"  found {len(networks)} network(s)")
 
     if output is None:
-        output = f"networks.{fmt}"
+        output = paths.default_path("exports", f"networks.{fmt}")
 
     if fmt == "csv":
         io_mod.save_csv(output, [_row(n) for n in networks], CSV_FIELDS)

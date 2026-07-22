@@ -1,0 +1,26 @@
+# Exported data — may contain real network/firewall/content-filter config
+*.json
+*.csv
+!requirements.txt
+networks.*
+firewall_*.csv
+firewall_*.json
+contentfilter_*.json
+l7_*.json
+orgs.*
+
+# Secrets / environment
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

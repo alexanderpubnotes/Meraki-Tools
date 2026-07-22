@@ -225,7 +225,7 @@ def restore_qos_rules(dashboard, target_net_id, net_name, net_dir, failures, dry
 # ------------------------------------------- restore-ports (swap day) ------
 
 def restore_ports(dashboard, target_org_id, backup_dir, network_filter=None,
-                  dry_run=False):
+                  dry_run=True, progress_cb=None, cancel_event=None):
     """Apply per-port switch configs. Run AFTER the new switches are claimed
     into the target networks. Matching is by DEVICE NAME: a new switch named
     exactly like the old one inherits its port config."""
@@ -248,14 +248,24 @@ def restore_ports(dashboard, target_org_id, backup_dir, network_filter=None,
     target_by_name = {n["name"]: n for n in target_nets}
     failures = []
 
-    for net in networks:
+    cancelled = False
+    total = len(networks)
+    for i, net in enumerate(networks, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before network {i}/{total} ('{net['name']}').")
+            cancelled = True
+            break
         net_dir = f"{backup_dir}/networks/{safe_name(net['name'])}"
         dev_root = f"{net_dir}/switch_devices"
         if not os.path.isdir(dev_root):
+            if progress_cb:
+                progress_cb(i, total)
             continue
         target_net = target_by_name.get(net["name"])
         if not target_net:
             print(f"  SKIP    '{net['name']}': network not found in target org")
+            if progress_cb:
+                progress_cb(i, total)
             continue
         print(f"\n  network '{net['name']}'")
 
@@ -322,6 +332,8 @@ def restore_ports(dashboard, target_org_id, backup_dir, network_filter=None,
                 print(f"  would apply {len(ports)} port configs to '{info['name']}'")
             else:
                 print(f"  done    '{info['name']}'")
+        if progress_cb:
+            progress_cb(i, total)
 
     if failures:
         print(f"\n  {len(failures)} port(s) FAILED — all others were still applied:")
@@ -329,5 +341,7 @@ def restore_ports(dashboard, target_org_id, backup_dir, network_filter=None,
             print(f"    - {f['name']}: {f['kind']}")
         if not dry_run:
             save_json(f"{backup_dir}/port_failures_org_{target_org_id}.json", failures)
+    elif cancelled:
+        print("\n  Cancelled early — safe to re-run; already-restored switches are unaffected.")
     elif dry_run:
         print("\n  Dry run complete — nothing was changed.")

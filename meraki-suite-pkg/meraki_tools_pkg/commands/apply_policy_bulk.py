@@ -42,7 +42,8 @@ def _prefix_groups(groups, prefix):
 
 
 def run(dashboard, entries, org_id, group_prefix, group_size=140,
-        name_base=None, apply=False, assume_yes=False):
+        name_base=None, apply=False, assume_yes=False,
+        progress_cb=None, cancel_event=None):
     if not entries:
         sys.exit("Nothing to add. Supply --fqdn / --ip / --from-file.")
     if not org_id:
@@ -180,7 +181,13 @@ def run(dashboard, entries, org_id, group_prefix, group_size=140,
     # 1. Create new objects, mapping placeholder -> real id.
     ph_to_id = {}
     total_new = len(plan_create)
+    cancelled = False
     for i, (val, typ, assigned_name, ph, target) in enumerate(plan_create, 1):
+        if cancel_event is not None and cancel_event.is_set():
+            print(f"\n  Cancelled — stopped before object {i}/{total_new}. "
+                  "Objects created so far will still be added to their groups below.")
+            cancelled = True
+            break
         try:
             payload = po.object_payload(val, typ, name=(assigned_name if name_base else None))
             obj = dashboard.organizations.createOrganizationPolicyObject(org_id, **payload)
@@ -191,6 +198,8 @@ def run(dashboard, entries, org_id, group_prefix, group_size=140,
             ph_to_id[ph] = None
             failures.append((val, str(e)))
             print(f"  [create {i}/{total_new}] {val} -> FAILED: {e}")
+        if progress_cb:
+            progress_cb(i, total_new)
 
     # 2. Resolve each group's final member list (placeholders -> real ids, drop failures).
     for w in work:
@@ -204,7 +213,10 @@ def run(dashboard, entries, org_id, group_prefix, group_size=140,
                 resolved.append(m)
         w["members"] = resolved
 
-    # 3. Create/update groups (one call each).
+    # 3. Create/update groups (one call each). NOT cancellable: this step is
+    # what actually registers whatever objects got created above, so a
+    # cancellation must still let it complete rather than leaving newly
+    # created objects orphaned (in no group, referenced by no rule).
     for w in work:
         try:
             if w["existing"]:
@@ -220,7 +232,7 @@ def run(dashboard, entries, org_id, group_prefix, group_size=140,
             print(f"  [group] FAILED {w['name']}: {e}")
             failures.append((w["name"], f"group write: {e}"))
 
-    print("\nDone.")
+    print("\nDone." + ("  (CANCELLED early — safe to re-run to finish the rest.)" if cancelled else ""))
     if failures:
         print("\nEntries/groups that failed (safe to re-run — placed entries skip):")
         for v, r in failures:

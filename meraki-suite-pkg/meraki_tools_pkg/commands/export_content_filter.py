@@ -11,6 +11,7 @@ The exported JSON stores the raw GET (for reference) and a normalized block
 from merakicore import networks as net_mod
 from merakicore import io as io_mod
 from merakicore import contentfilter as cf
+from merakicore import paths
 
 
 def _get(dashboard, network_id):
@@ -34,6 +35,6 @@ def run(dashboard, org_id, source_network_id, output=None):
         "settings": normalized,     # ready to push
         "raw": raw,                 # kept for reference / audit
     }
-    out = output or f"contentfilter_{source['id']}.json"
+    out = output or paths.default_path("exports", f"contentfilter_{source['id']}.json")
     io_mod.save_json(out, payload)
     return out

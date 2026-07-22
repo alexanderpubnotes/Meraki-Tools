@@ -1,0 +1,27 @@
+{
+  "_comment_for_humans": "L3 rule to insert at position 1 via 'apply l3-insert'. Destinations are listed by GROUP NAME (not ID) so this file works against any org - the tool resolves names to that org's real IDs at apply time. The groups must already exist in the target org (create them first, e.g. with 'apply policy-bulk'). Verify they exist with 'export groups'.",
+
+  "comment": "Deny Spamhaus",
+  "policy": "deny",
+  "protocol": "any",
+  "srcPort": "Any",
+  "srcCidr": "Any",
+  "destPort": "Any",
+  "syslogEnabled": false,
+
+  "dest_groups": [
+    "Spamhaus Group 1",
+    "Spamhaus Group 2",
+    "Spamhaus Group 3",
+    "Spamhaus Group 4",
+    "Spamhaus Group 5",
+    "Spamhaus Group 6",
+    "Spamhaus Group 7",
+    "Spamhaus Group 8",
+    "Spamhaus Group 9",
+    "Spamhaus Group 10",
+    "Spamhaus Group 11",
+    "Spamhaus Group 12",
+    "Spamhaus Group 13"
+  ]
+}

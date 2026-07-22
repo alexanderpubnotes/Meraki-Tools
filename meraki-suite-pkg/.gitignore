@@ -1,0 +1,19 @@
+# Default output tree — exports/backups/batch files may contain real
+# network/firewall/content-filter config from a live org.
+output/
+
+# Secrets / environment
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
